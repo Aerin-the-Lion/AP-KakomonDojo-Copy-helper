@@ -1,0 +1,1 @@
+# AP-KakomonDojo-Copy-helper
