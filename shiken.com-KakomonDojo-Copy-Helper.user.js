@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         shiken.com-KakomonDojo-Copy-Helper
 // @namespace    http://tampermonkey.net/
-// @version      1.0.0
+// @version      1.1.0
 // @description  Copy questions and explanations from JP IT certification exam practice sites (Kakomon-Dojo) with proper formatting
 // @author       Aerin-the-Lion
 // @match        https://www.ap-siken.com/*
@@ -38,15 +38,15 @@
  *   問題文を適切なフォーマット（セクションラベル付き）でコピー
  * - Copy explanations with preserved paragraph structure
  *   段落構造を保持した解説のコピー
- * - Automatic image URL extraction and inclusion
- *   画像URLの自動抽出と含有
+ * - Automatic image URL extraction and inclusion for all sections
+ *   全セクションでの画像URLの自動抽出と含有
  * - Support for choice formatting (ア → ア. )
  *   選択肢フォーマット対応（ア → ア. ）
  * - Exam session information extraction with line break support
  *   試験セッション情報の抽出（改行対応）
  * 
  * @author Aerin-the-Lion
- * @version 1.0.0
+ * @version 1.1.0
  * @license MIT
  */
 
@@ -129,14 +129,25 @@
      * Format choice options by adding periods after Japanese characters
      * 日本語文字の後にピリオドを追加して選択肢をフォーマット
      * @param {Array<string>} choices - Array of choice strings / 選択肢文字列の配列
+     * @param {Array<Array<string>>} choiceImageUrls - Array of image URL arrays for each choice / 各選択肢の画像URL配列
      * @returns {Array<string>} Formatted choices / フォーマット済み選択肢
      */
-    function formatChoices(choices) {
-        return choices.map(choice => {
+    function formatChoices(choices, choiceImageUrls = []) {
+        return choices.map((choice, index) => {
             let formattedChoice = choice.trim();
             // Add ". " after Japanese choice indicators (ア、イ、ウ、エ, etc.)
             // 日本語選択肢記号（ア、イ、ウ、エなど）の後に". "を追加
             formattedChoice = formattedChoice.replace(/^([アイウエオカキクケコ])\s*(?!\.)/g, '$1. ');
+            
+            // Add image URLs for this choice if present / この選択肢の画像URLがあれば追加
+            if (choiceImageUrls[index] && choiceImageUrls[index].length > 0) {
+                formattedChoice += '\n';
+                choiceImageUrls[index].forEach(url => {
+                    formattedChoice += url + '\n';
+                });
+                formattedChoice = formattedChoice.trim(); // Remove trailing newline
+            }
+            
             return formattedChoice;
         });
     }
@@ -171,17 +182,17 @@
     }
 
     /**
-     * Extract image URLs from question element
-     * 問題要素から画像URLを抽出
-     * @param {HTMLElement} questionElement - DOM element containing the question / 問題を含むDOM要素
+     * Extract image URLs from any element
+     * 任意の要素から画像URLを抽出
+     * @param {HTMLElement} element - DOM element to extract images from / 画像を抽出するDOM要素
      * @returns {Array<string>} Array of absolute image URLs / 絶対画像URLの配列
      */
-    function extractImageUrls(questionElement) {
+    function extractImageUrls(element) {
         const imageUrls = [];
         
-        if (!questionElement) return imageUrls;
+        if (!element) return imageUrls;
         
-        const imgElements = questionElement.querySelectorAll('img');
+        const imgElements = element.querySelectorAll('img');
         
         imgElements.forEach(img => {
             const src = img.getAttribute('src');
@@ -288,19 +299,32 @@
         // Add choices section / 選択肢セクションを追加
         content += '【選択肢】\n';
 
-        // Extract choices from .selectList li elements / .selectList li要素から選択肢を抽出
+        // Extract choices from .selectList li elements with image support
+        // .selectList li要素から選択肢を抽出（画像対応）
         const choices = document.querySelectorAll('.selectList li');
         if (choices.length > 0) {
             const choiceTexts = [];
+            const choiceImageUrls = [];
+            
             choices.forEach(choice => {
-                const choiceText = choice.textContent.trim();
+                // Extract text content / テキストコンテンツを抽出
+                const tempDiv = choice.cloneNode(true);
+                const imgElements = tempDiv.querySelectorAll('img');
+                imgElements.forEach(img => img.remove());
+                
+                const choiceText = tempDiv.textContent.trim();
                 if (choiceText && choiceText.length > 1) {
                     choiceTexts.push(choiceText);
+                    
+                    // Extract image URLs for this choice / この選択肢の画像URLを抽出
+                    const choiceImages = extractImageUrls(choice);
+                    choiceImageUrls.push(choiceImages);
                 }
             });
             
-            // Format choices with proper punctuation / 適切な句読点で選択肢をフォーマット
-            const formattedChoices = formatChoices(choiceTexts);
+            // Format choices with proper punctuation and image URLs
+            // 適切な句読点と画像URLで選択肢をフォーマット
+            const formattedChoices = formatChoices(choiceTexts, choiceImageUrls);
             content += formattedChoices.join('\n') + '\n';
         }
 
@@ -320,13 +344,16 @@
     }
 
     /**
-     * Extract formatted text from HTML element while preserving structure
-     * 構造を保持しながらHTML要素からフォーマット済みテキストを抽出
+     * Extract formatted text from HTML element while preserving structure and images
+     * 構造と画像を保持しながらHTML要素からフォーマット済みテキストを抽出
      * @param {HTMLElement} element - DOM element to extract text from / テキストを抽出するDOM要素
-     * @returns {string} Formatted text with preserved structure / 構造を保持したフォーマット済みテキスト
+     * @returns {string} Formatted text with preserved structure and image URLs / 構造と画像URLを保持したフォーマット済みテキスト
      */
     function extractExplanationText(element) {
         if (!element) return '';
+        
+        // First extract all image URLs before processing HTML / HTML処理前にすべての画像URLを抽出
+        const imageUrls = extractImageUrls(element);
         
         let html = element.innerHTML;
         
@@ -375,6 +402,15 @@
             // Trim leading/trailing whitespace / 先頭・末尾の空白をトリム
             .trim();
         
+        // Add image URLs at the end if present / 画像URLがあれば最後に追加
+        if (imageUrls.length > 0) {
+            text += '\n\n';
+            imageUrls.forEach(url => {
+                text += url + '\n';
+            });
+            text = text.trim(); // Remove trailing newline
+        }
+        
         return text;
     }
 
@@ -406,8 +442,8 @@
     }
 
     /**
-     * Extract and copy explanation content
-     * 解説コンテンツを抽出してコピー
+     * Extract and copy explanation content with image support
+     * 画像対応で解説コンテンツを抽出してコピー
      */
     function copyExplanationContent() {
         let content = '';
@@ -440,7 +476,8 @@
         }
         
         if (explanationElement) {
-            // Extract formatted text while preserving structure / 構造を保持しながらフォーマット済みテキストを抽出
+            // Extract formatted text while preserving structure and images
+            // 構造と画像を保持しながらフォーマット済みテキストを抽出
             const explanationText = extractExplanationText(explanationElement);
             content += explanationText;
         }
@@ -589,7 +626,7 @@
      * ユーザースクリプトを初期化
      */
     function init() {
-        console.log('shiken.com-KakomonDojo-Copy-Helper v1.0.0 initializing');
+        console.log('shiken.com-KakomonDojo-Copy-Helper v1.1.0 initializing');
         
         const checkAndCreate = () => {
             if (isQuestionPage()) {
