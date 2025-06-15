@@ -96,7 +96,7 @@ MIT License
 バグ報告や機能要望は[GitHubのIssues](https://github.com/Aerin-the-Lion/shiken.com-KakomonDojo-Copy-Helper/issues)にてお願いします。
 
 ## 📜 更新履歴
-
+- v1.1.0 (2025-06-15) - 選択肢、解説に画像があった際にもurlを貼付するように追加修正
 - v1.0.0 (2025-06-15) - 初回リリース
 
 ---
